@@ -1,7 +1,7 @@
 import { InteractionRequiredAuthError } from '@azure/msal-browser';
 import { apiRequest } from '../authConfig';
 
-const BFF_URL = 'https://e2yhtyfdj8.execute-api.us-east-1.amazonaws.com';
+const BFF_URL = process.env.REACT_APP_BFF_URL || 'http://localhost:8080';
 
 export async function llamarBFF(instance, cuenta, path, options = {}) {
   let respuestaToken;
