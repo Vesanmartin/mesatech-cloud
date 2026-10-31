@@ -1,0 +1,19 @@
+# Servicio systemd para un componente Java de MesaTech (ms-catalogo, ms-solicitudes o bff).
+# Reemplazar NOMBRE_MS por el nombre del componente y guardar como /etc/systemd/system/NOMBRE_MS.service:
+#   sed 's/NOMBRE_MS/ms-catalogo/g' mesatech-ms.service | sudo tee /etc/systemd/system/ms-catalogo.service
+# Cada componente tiene su propio archivo de variables: /opt/mesatech/NOMBRE_MS.env (chmod 600)
+[Unit]
+Description=MesaTech NOMBRE_MS
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/opt/mesatech
+EnvironmentFile=/opt/mesatech/NOMBRE_MS.env
+ExecStart=/usr/bin/java -jar /opt/mesatech/NOMBRE_MS.jar
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

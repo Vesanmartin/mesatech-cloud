@@ -1,5 +1,6 @@
 package cl.duoc.mesatechcloud.bff.config;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.Customizer;
@@ -42,10 +43,14 @@ public class SecurityConfig {
         return converter;
     }
 
+    // Origenes permitidos configurables (app.cors.allowed-origins / CORS_ALLOWED_ORIGINS)
+    @Value("${app.cors.allowed-origins}")
+    private List<String> origenesPermitidos;
+
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(List.of("http://localhost:3000"));
+        configuration.setAllowedOrigins(origenesPermitidos);
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("Authorization", "Content-Type"));
         configuration.setAllowCredentials(true);

@@ -23,7 +23,9 @@ public class CategoriaController {
         return categoriaService.listar();
     }
 
+    // 201: guardada en RDS y evento confirmado por RabbitMQ · 503: guardada pero sin evento (P7)
     @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
     public Categoria crear(@Valid @RequestBody Categoria categoria) {
         return categoriaService.crear(categoria);
     }
