@@ -4,12 +4,14 @@ import { Table, Spinner, Alert, Card, Form, Button, Row, Col } from 'react-boots
 import { llamarBFF } from '../api/bffClient';
 import { useRoles } from '../hooks/useRoles';
 
-const FORMULARIO_VACIO = { titulo: '', descripcion: '', categoria: '', prioridad: '' };
+// EP2: la categoria se elige desde las categorias DISPONIBLES (copia local recibida por RabbitMQ)
+const FORMULARIO_VACIO = { titulo: '', descripcion: '', categoriaId: '', prioridad: '' };
 const ESTADOS = ['CREADA', 'ASIGNADA', 'EN_PROCESO', 'RESUELTA', 'CERRADA', 'CANCELADA'];
 
 function Solicitudes() {
   const { instance, accounts } = useMsal();
   const [solicitudes, setSolicitudes] = useState([]);
+  const [categoriasDisponibles, setCategoriasDisponibles] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState(null);
   const [formulario, setFormulario] = useState(FORMULARIO_VACIO);
@@ -28,8 +30,18 @@ function Solicitudes() {
     }
   };
 
+  const cargarCategorias = async () => {
+    try {
+      const datos = await llamarBFF(instance, accounts[0], '/v1/categorias-disponibles');
+      setCategoriasDisponibles(datos || []);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
   useEffect(() => {
     cargarSolicitudes();
+    cargarCategorias();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -42,7 +54,7 @@ function Solicitudes() {
     try {
       await llamarBFF(instance, accounts[0], '/v1/solicitudes', {
         method: 'POST',
-        body: JSON.stringify(formulario)
+        body: JSON.stringify({ ...formulario, categoriaId: Number(formulario.categoriaId) })
       });
       setFormulario(FORMULARIO_VACIO);
       cargarSolicitudes();
@@ -56,9 +68,10 @@ function Solicitudes() {
       await llamarBFF(instance, accounts[0], `/v1/solicitudes/${id}/estado?nuevoEstado=${nuevoEstado}`, {
         method: 'PATCH'
       });
-      cargarSolicitudes();
     } catch (err) {
       setError(err.message);
+    } finally {
+      cargarSolicitudes(); // si la regla lo rechaza (ej: RESUELTA sin EN_PROCESO) vuelve a mostrar el estado real
     }
   };
 
@@ -79,11 +92,22 @@ function Solicitudes() {
               </Col>
               <Col md={6}>
                 <Form.Label>Descripción</Form.Label>
-                <Form.Control name="descripcion" value={formulario.descripcion} onChange={manejarCambio} />
+                <Form.Control name="descripcion" value={formulario.descripcion} onChange={manejarCambio} required />
               </Col>
-              <Col md={3}>
+              <Col md={4}>
                 <Form.Label>Categoría</Form.Label>
-                <Form.Control name="categoria" value={formulario.categoria} onChange={manejarCambio} required />
+                <div className="d-flex gap-2">
+                  <Form.Select name="categoriaId" value={formulario.categoriaId} onChange={manejarCambio} required>
+                    <option value="">
+                      {categoriasDisponibles.length === 0 ? 'Aún no hay categorías disponibles' : 'Selecciona una categoría'}
+                    </option>
+                    {categoriasDisponibles.map((c) => (
+                      <option key={c.categoriaId} value={c.categoriaId}>{c.nombre}</option>
+                    ))}
+                  </Form.Select>
+                  <Button variant="outline-secondary" onClick={cargarCategorias} title="Actualizar categorías">↻</Button>
+                </div>
+                <Form.Text muted>Una categoría recién creada aparece aquí cuando Solicitudes la recibe.</Form.Text>
               </Col>
               <Col md={3}>
                 <Form.Label>Prioridad</Form.Label>

@@ -1,0 +1,32 @@
+# MesaTech Cloud · RabbitMQ en EC2 C (Ubuntu 24.04 LTS)
+# Uso:
+#   cp .env.example .env && nano .env && chmod 600 .env
+#   docker compose config --quiet && docker compose pull && docker compose up -d && docker compose ps
+
+name: mesatech-rabbitmq
+
+services:
+  rabbitmq:
+    image: rabbitmq:4.2-management        # imagen OFICIAL, etiqueta explícita, incluye panel de administración
+    container_name: rabbitmq
+    hostname: mesatech-rabbitmq           # nodo estable rabbit@mesatech-rabbitmq: al recrear el contenedor encuentra sus datos (P5)
+    restart: unless-stopped               # vuelve a levantarse si se reinicia la EC2 o Docker
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_ADMIN_USER:?Falta RABBITMQ_ADMIN_USER en .env}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_ADMIN_PASS:?Falta RABBITMQ_ADMIN_PASS en .env}
+    ports:
+      - "5672:5672"                       # AMQP: solo EC2 A y B (security group)
+      - "15672:15672"                     # panel web: solo IP administrativa /32 (security group)
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq   # vhost, usuarios, colas y mensajes persistentes sobreviven al contenedor
+      - ./definiciones:/etc/rabbitmq/definiciones:ro
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  rabbitmq_data:
+    name: mesatech_rabbitmq_data

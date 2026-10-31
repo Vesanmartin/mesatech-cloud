@@ -9,3 +9,6 @@
 
 # Logs
 *.log
+# Secretos: nunca al repositorio
+.env
+*.pem

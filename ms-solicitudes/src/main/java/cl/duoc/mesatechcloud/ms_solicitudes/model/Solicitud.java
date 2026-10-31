@@ -28,6 +28,10 @@ public class Solicitud {
         @NotBlank 
         private String descripcion;
 
+        // EP2: id de la categoria de ORIGEN (RDS Catalogo), validado contra la copia local recibida por RabbitMQ
+        private Long categoriaId;
+
+        // Nombre de la categoria, copiado desde la copia local (se mantiene para v1 y v2 del BFF)
         private String categoria;
 
         private String prioridad;
