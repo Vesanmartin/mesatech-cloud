@@ -2,13 +2,11 @@ import { InteractionRequiredAuthError } from '@azure/msal-browser';
 import { apiRequest } from '../authConfig';
 
 // =========================================================================================
-// 📍 CONFIGURACIÓN DE IP DE AWS (ÚNICO LUGAR DONDE SE CAMBIA EN EL FRONTEND)
-// Cada vez que se reinicie AWS Academy Learner Lab y cambie la IP pública de EC2 A:
-// Cambia únicamente el valor de IP_PUBLICA_EC2_A y guarda este archivo.
-// React lo detectará de inmediato sin necesidad de reiniciar la consola.
+// 📍 CONFIGURACIÓN DE AMAZON API GATEWAY (PUNTO DE ENTRADA OFICIAL EN AWS)
+// React (localhost:3000) ➔ AWS API Gateway (HTTPS) ➔ BFF (EC2 A) ➔ Microservicios ➔ RDS
 // =========================================================================================
-export const IP_PUBLICA_EC2_A = '3.84.111.84';
-const BFF_URL = `http://${IP_PUBLICA_EC2_A}:8080`;
+export const API_GATEWAY_URL = 'https://zvedu0xiv1.execute-api.us-east-1.amazonaws.com';
+const BFF_URL = API_GATEWAY_URL;
 // =========================================================================================
 
 // Extrae un mensaje legible del cuerpo de error (los servicios responden {"error": "..."})
