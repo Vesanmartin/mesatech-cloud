@@ -17,57 +17,9 @@ const PRIORIDADES_BASE = ['Baja', 'Media', 'Alta', 'Urgente'];
 const ESTADOS = ['CREADA', 'ASIGNADA', 'EN_PROCESO', 'RESUELTA', 'CERRADA', 'CANCELADA'];
 const FORMULARIO_VACIO = { titulo: '', descripcion: '', categoria: '', prioridad: '' };
 
-// Solicitudes iniciales con operadores y notas de atención para pruebas
-const SOLICITUDES_DEMO = [
-  { 
-    id: 101, 
-    titulo: 'Problema con cargador de notebook', 
-    descripcion: 'El cargador tiene falso contacto y no carga la batería.', 
-    categoria: 'Hardware', 
-    prioridad: 'Alta', 
-    estado: 'CREADA', 
-    operador: '', 
-    atencion: '',
-    cliente: 'Ana Silva (Cliente)' 
-  },
-  { 
-    id: 102, 
-    titulo: 'Configuración de acceso VPN corporativo', 
-    descripcion: 'Solicito credenciales y perfil de VPN para trabajo remoto.', 
-    categoria: 'Redes', 
-    prioridad: 'Media', 
-    estado: 'ASIGNADA', 
-    operador: 'Carlos Gómez (Operador)', 
-    atencion: '',
-    cliente: 'Roberto Díaz' 
-  },
-  { 
-    id: 103, 
-    titulo: 'Licencia para software de diseño', 
-    descripcion: 'Requiero activación de Adobe Illustrator.', 
-    categoria: 'Software', 
-    prioridad: 'Baja', 
-    estado: 'RESUELTA', 
-    operador: 'Carlos Gómez (Operador)', 
-    atencion: 'Licencia asignada en panel de administración y verificada con el usuario.',
-    cliente: 'Ana Silva (Cliente)' 
-  },
-  { 
-    id: 104, 
-    titulo: 'Reemplazo de teclado dañado', 
-    descripcion: 'Teclas espacio y enter no responden.', 
-    categoria: 'Hardware', 
-    prioridad: 'Media', 
-    estado: 'EN_PROCESO', 
-    operador: 'Felipe Torres (Operador)', 
-    atencion: 'Equipo recepcionado en laboratorio.',
-    cliente: 'Juan Morales' 
-  }
-];
-
 function Solicitudes({ usuarioActivo, prioridades = PRIORIDADES_BASE }) {
   const { instance, accounts } = useMsal();
-  const [solicitudes, setSolicitudes] = useState(SOLICITUDES_DEMO);
+  const [solicitudes, setSolicitudes] = useState([]);
   const [categorias, setCategorias] = useState(CATEGORIAS_DEFAULT);
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState(null);
@@ -96,32 +48,34 @@ function Solicitudes({ usuarioActivo, prioridades = PRIORIDADES_BASE }) {
   const puedeGestionar = esOperador || esAdmin;
 
   const cargarSolicitudes = async () => {
+    if (!accounts || accounts.length === 0) return;
     try {
-      if (accounts && accounts.length > 0) {
-        setCargando(true);
-        const datos = await llamarBFF(instance, accounts[0], '/v1/solicitudes/mias');
-        if (datos && datos.length > 0) {
-          setSolicitudes(datos.map(d => ({ ...d, operador: d.operador || '', atencion: d.atencion || '' })));
-        }
+      setCargando(true);
+      setError(null);
+      const datos = await llamarBFF(instance, accounts[0], '/v1/solicitudes/mias');
+      if (datos && Array.isArray(datos)) {
+        setSolicitudes(datos.map(d => ({ ...d, operador: d.operador || '', atencion: d.atencion || '' })));
+      } else {
+        setSolicitudes([]);
       }
     } catch (err) {
-      console.warn('Backend offline, usando datos locales:', err.message);
+      setSolicitudes([]);
+      setError(`No se pudo conectar con el servidor BFF en AWS (${err.message}). Si reinició AWS Learner Lab, verifique que ms-catalogo y bff estén corriendo en EC2 A.`);
     } finally {
       setCargando(false);
     }
   };
 
   const cargarCategorias = async () => {
+    if (!accounts || accounts.length === 0) return null;
     try {
-      if (accounts && accounts.length > 0) {
-        const datos = await llamarBFF(instance, accounts[0], '/v1/categorias-disponibles');
-        if (datos && datos.length > 0) {
-          setCategorias(datos.map(c => ({ id: c.categoriaId, nombre: c.nombre })));
-          return datos;
-        }
+      const datos = await llamarBFF(instance, accounts[0], '/v1/categorias-disponibles');
+      if (datos && Array.isArray(datos) && datos.length > 0) {
+        setCategorias(datos.map(c => ({ id: c.categoriaId, nombre: c.nombre })));
+        return datos;
       }
-    } catch {
-      // Mantiene categorías locales si el backend no responde
+    } catch (err) {
+      console.warn('Categorías no disponibles desde BFF:', err.message);
     }
     return null;
   };
@@ -130,7 +84,7 @@ function Solicitudes({ usuarioActivo, prioridades = PRIORIDADES_BASE }) {
     cargarSolicitudes();
     cargarCategorias();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [accounts]);
 
   const manejarCambio = (e) => {
     setFormulario({ ...formulario, [e.target.name]: e.target.value });
@@ -138,34 +92,23 @@ function Solicitudes({ usuarioActivo, prioridades = PRIORIDADES_BASE }) {
 
   const crear = async (e) => {
     e.preventDefault();
+    setError(null);
     try {
+      if (!accounts || accounts.length === 0) {
+        throw new Error('Debe iniciar sesión para crear una solicitud.');
+      }
       const catObj = categorias.find(c => c.nombre === formulario.categoria) || { id: 1, nombre: formulario.categoria };
       
-      if (accounts && accounts.length > 0) {
-        await llamarBFF(instance, accounts[0], '/v1/solicitudes', {
-          method: 'POST',
-          body: JSON.stringify({
-            ...formulario,
-            categoriaId: catObj.id,
-            categoria: catObj.nombre
-          })
-        });
-        cargarSolicitudes();
-      } else {
-        const nuevaLocal = {
-          id: solicitudes.length + 101,
-          titulo: formulario.titulo,
-          descripcion: formulario.descripcion,
-          categoria: catObj.nombre,
-          prioridad: formulario.prioridad,
-          estado: 'CREADA',
-          operador: '',
-          atencion: '',
-          cliente: usuarioActivo?.nombre || 'Cliente'
-        };
-        setSolicitudes([nuevaLocal, ...solicitudes]);
-      }
+      await llamarBFF(instance, accounts[0], '/v1/solicitudes', {
+        method: 'POST',
+        body: JSON.stringify({
+          ...formulario,
+          categoriaId: catObj.id,
+          categoria: catObj.nombre
+        })
+      });
       setFormulario(FORMULARIO_VACIO);
+      await cargarSolicitudes();
     } catch (err) {
       setError(err.message);
     }

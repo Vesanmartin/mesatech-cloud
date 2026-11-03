@@ -1,8 +1,8 @@
 import { InteractionRequiredAuthError } from '@azure/msal-browser';
 import { apiRequest } from '../authConfig';
 
-// URL del BFF en AWS EC2 A
-const BFF_URL = process.env.REACT_APP_BFF_URL || 'http://98.81.84.113:8080';
+// URL del BFF en AWS EC2 A (actualizada a la nueva IP pública de EC2 A tras reinicio)
+const BFF_URL = process.env.REACT_APP_BFF_URL || 'http://3.84.111.84:8080';
 
 // Extrae un mensaje legible del cuerpo de error (los servicios responden {"error": "..."})
 function mensajeDeError(texto, status, path) {

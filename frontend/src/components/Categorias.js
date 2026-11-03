@@ -57,7 +57,7 @@ function Categorias({ alActualizarPrioridades }) {
         }
       }
     } catch (err) {
-      console.warn('Backend offline, usando catálogo local:', err.message);
+      setError(`No se pudo conectar con el catálogo en AWS (${err.message}). Verifique que la instancia EC2 A y el BFF estén activos.`);
     } finally {
       setCargando(false);
     }
