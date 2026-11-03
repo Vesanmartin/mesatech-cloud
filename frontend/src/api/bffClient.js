@@ -9,6 +9,10 @@ function mensajeDeError(texto, status, path) {
   if (!texto) return `Error ${status} llamando a ${path}`;
   try {
     const json = JSON.parse(texto);
+    if (json.campos) {
+      const detalleCampos = Object.entries(json.campos).map(([k, v]) => `${k} (${v})`).join(', ');
+      return `${json.error}: ${detalleCampos}`;
+    }
     const detalle = json.detalle ? ` ${json.detalle}` : '';
     return json.error ? `${json.error}.${detalle}` : texto;
   } catch {

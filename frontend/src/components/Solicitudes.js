@@ -364,6 +364,7 @@ function Solicitudes({ usuarioActivo, prioridades = PRIORIDADES_BASE }) {
                   value={formulario.descripcion} 
                   onChange={manejarCambio} 
                   placeholder="Detalle de la solicitud"
+                  required
                 />
               </Col>
               <Col md={3}>
