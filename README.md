@@ -14,9 +14,9 @@ React (MSAL) → API Gateway → BFF (EC2 A) → ms-solicitudes (EC2 B) ◄─�
 
 | Componente | Ubicación | Publica / consume | Base de datos propia |
 |---|---|---|---|
-| ms-catalogo (puerto 8082) | EC2 A | **Publica** `CATEGORIA_CREADA` | RDS `mesatech-catalogo-db` (base `catalogo`) |
-| ms-solicitudes (puerto 8081) | EC2 B | **Consume** `CATEGORIA_CREADA` | RDS `mesatech-solicitudes-db` (base `solicitudes`) |
-| RabbitMQ 4.2 (Docker Compose) | EC2 C (Ubuntu 24.04) | Broker | — (volumen `mesatech_rabbitmq_data`) |
+| ms-catalogo (puerto 8082) | EC2 A | **Publica** `CATEGORIA_CREADA` | RDS `mesatech-rds-catalogo` (base `mesatech_catalogo`) |
+| ms-solicitudes (puerto 8081) | EC2 B | **Consume** `CATEGORIA_CREADA` | RDS `mesatech-rds-solicitudes` (base `mesatech_solicitudes`) |
+| RabbitMQ 4.1 (Docker Compose) | EC2 C (Ubuntu 24.04) | Broker | — (volumen `mesatech-rabbitmq_rabbitmq_data`) |
 | BFF (puerto 8080) | EC2 A | No accede a RDS ni a RabbitMQ | — |
 | frontend React | Local (`localhost:3000`) | — | — |
 
@@ -28,7 +28,7 @@ React (MSAL) → API Gateway → BFF (EC2 A) → ms-solicitudes (EC2 B) ◄─�
 | `bff/` | Validación JWT de Entra ID, roles, v1 y v2, proxy hacia los microservicios |
 | `ms-catalogo/` | Categorías y prioridades. **Publicador** RabbitMQ (`event/CategoriaPublisher`) |
 | `ms-solicitudes/` | Solicitudes y estados. **Consumidor** RabbitMQ (`event/CategoriaListener`) y copia local `categorias_locales` |
-| `rabbitmq/` | `compose.yaml`, `.env.example`, definiciones (vhost, exchange, cola, binding) y script de usuarios/permisos |
+| `rabbitmq/` | `compose.yaml`, `.env.example` y `definiciones/mesatech.json` (referencia de la topología: vhost, exchange, cola y binding) |
 | `sql/` | Bases, usuarios de aplicación y tablas de cada RDS |
 | `deploy/` | Servicio systemd para los componentes Java |
 | `docs/contrato-evento.md` | Contrato del evento `CATEGORIA_CREADA` |
@@ -39,8 +39,8 @@ React (MSAL) → API Gateway → BFF (EC2 A) → ms-solicitudes (EC2 B) ◄─�
 |---|---|
 | Java | 21 (OpenJDK / Temurin) |
 | Spring Boot | 4.1.1 |
-| RabbitMQ | imagen oficial `rabbitmq:4.2-management` (4.2.9) |
-| Docker Engine / Compose plugin | 29.9.2 / v5.6.1 |
+| RabbitMQ | imagen oficial `rabbitmq:4.1-management` (4.1.8) |
+| Docker Engine / Compose plugin | 29.1.3 / 2.40.3 (paquetes `docker.io` y `docker-compose-v2` de Ubuntu) |
 | SO EC2 | Ubuntu Server 24.04 LTS |
 | RDS | MySQL 8.4.11, puerto 3306, `db.t4g.micro`, sin acceso público |
 | Node.js (frontend) | 20 o superior |
@@ -51,9 +51,9 @@ React (MSAL) → API Gateway → BFF (EC2 A) → ms-solicitudes (EC2 B) ◄─�
 |---|---|---|---|
 | EC2 C (RabbitMQ) | 5672 | SG de EC2 A y SG de EC2 B | AMQP por red privada |
 | EC2 C (RabbitMQ) | 15672 | IP administrativa /32 | Panel de administración |
-| RDS Catálogo | 3306 | SG de EC2 A (`ec2-rds-1` → `rds-ec2-1`) | Solo ms-catalogo |
-| RDS Solicitudes | 3306 | SG de EC2 B (`ec2-rds-2` → `rds-ec2-2`) | Solo ms-solicitudes |
-| EC2 A, B, C | 22 | IP administrativa /32 | SSH |
+| RDS Catálogo | 3306 | `sg_catalogo` (regla en `sg_rdscatalogo`) | Solo ms-catalogo |
+| RDS Solicitudes | 3306 | `sg_solicitudes` (regla en `sg_rdssolicitudes`) | Solo ms-solicitudes |
+| EC2 A, B, C | 22 | IP administrativa /32 y lista administrada de EC2 Instance Connect (`pl-0e4bcff02b13bef1e`) | SSH |
 | EC2 B | 8081 | SG de EC2 A | BFF → ms-solicitudes por red privada |
 | EC2 A | 8080 | Integración de API Gateway (EP1) | API Gateway → BFF |
 
@@ -61,17 +61,34 @@ Los microservicios se conectan a RabbitMQ y entre sí por **IP privada** (no cam
 
 ## 1. RabbitMQ (EC2 C)
 
+Instalación desde cero de Docker y levantamiento del broker con `compose.yaml`:
+
 ```bash
-cd ~/rabbitmq
-cp .env.example .env && nano .env && chmod 600 .env
-docker compose config --quiet      # valida el archivo (sin salida = OK)
-docker compose pull                # descarga la imagen
-docker compose up -d               # arranca
-docker compose ps                  # estado (healthy)
-docker compose logs --tail 50 rabbitmq
-docker exec rabbitmq rabbitmq-diagnostics status
-bash crear-recursos.sh             # vhost, exchange, cola, binding, usuarios y permisos
+sudo apt update && sudo apt install -y docker.io docker-compose-v2
+sudo systemctl enable --now docker            # Docker arranca solo si la EC2 se reinicia
+sudo mkdir -p /opt/mesatech-rabbitmq && cd /opt/mesatech-rabbitmq
+# copiar aquí compose.yaml y crear .env a partir de .env.example
+sudo chmod 600 .env
+sudo docker compose up -d
+sudo docker ps
 ```
+
+Panel de administración: `http://<IP-publica-EC2-C>:15672` (puerto restringido a la IP administrativa).
+Desde el panel, con el vhost `mesatech` seleccionado, se crean:
+
+| Elemento | Nombre | Configuración |
+|---|---|---|
+| Vhost | `mesatech` | — |
+| Exchange | `catalogo.exchange` | direct, durable |
+| Cola | `solicitudes.catalogo.queue` | classic, durable |
+| Binding | `catalogo.exchange` → `solicitudes.catalogo.queue` | routing key `categoria.creada` |
+
+Usuarios de aplicación (sin tags, permisos mínimos sobre `mesatech`):
+
+| Usuario | Configure | Write | Read |
+|---|---|---|---|
+| `catalogo_publicador` | (vacío) | `^catalogo\.exchange$` | (vacío) |
+| `solicitudes_consumidor` | (vacío) | (vacío) | `^solicitudes\.catalogo\.queue$` |
 
 ## 2. Bases de datos
 

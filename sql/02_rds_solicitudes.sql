@@ -1,14 +1,14 @@
--- Ejecutar en la RDS de SOLICITUDES (mesatech-solicitudes-db), OTRA instancia distinta, desde la EC2 B:
+-- Ejecutar en la RDS de SOLICITUDES (mesatech-rds-solicitudes), OTRA instancia distinta, desde la EC2 B:
 --   mysql -h <endpoint-solicitudes> -u admin -p < 02_rds_solicitudes.sql
--- Reemplazar CAMBIAR_CLAVE antes de ejecutar y NO guardar este archivo con la clave real.
+-- La clave del usuario la genera MySQL (RANDOM PASSWORD) y se muestra una sola vez: guardarla en el gestor de claves.
 
-CREATE DATABASE IF NOT EXISTS solicitudes CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE IF NOT EXISTS mesatech_solicitudes CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
-CREATE USER IF NOT EXISTS 'app_solicitudes'@'%' IDENTIFIED BY 'CAMBIAR_CLAVE';
-GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES ON solicitudes.* TO 'app_solicitudes'@'%';
-FLUSH PRIVILEGES;
+-- Origen 172.31.%: solo desde la VPC, además del security group
+CREATE USER IF NOT EXISTS 'solicitudes_app'@'172.31.%' IDENTIFIED BY RANDOM PASSWORD;
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES ON mesatech_solicitudes.* TO 'solicitudes_app'@'172.31.%';
 
-USE solicitudes;
+USE mesatech_solicitudes;
 
 -- Copia local de categorias recibidas por RabbitMQ (categoria_id = id de origen en Catalogo)
 CREATE TABLE IF NOT EXISTS categorias_locales (
