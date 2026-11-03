@@ -203,8 +203,8 @@ def create_guide_docx(filename):
         "URL del Gateway BFF en AWS: https://zvedu0xiv1.execute-api.us-east-1.amazonaws.com",
         "RabbitMQ Admin Web: admin / RabbitMQ2026! (URL: http://34.227.193.103:15672)",
         "Usuario Maestro RDS: admin (clave definida en consola)",
-        "Usuario Aplicación RDS Catálogo: app_catalogo / CatalogoDbPass2026! (DB: catalogo)",
-        "Usuario Aplicación RDS Solicitudes: app_solicitudes / SolicitudesDbPass2026! (DB: solicitudes)",
+        "Usuario Aplicación RDS Catálogo: app_catalogo / 12345678 (DB: catalogo)",
+        "Usuario Aplicación RDS Solicitudes: app_solicitudes / 12345678 (DB: solicitudes)",
         "RabbitMQ Publicador: catalogo_publicador / CatalogoPass2026! (vHost: mesatech)",
         "RabbitMQ Consumidor: solicitudes_consumidor / SolicitudesPass2026! (vHost: mesatech)",
         "Repositorio Git: https://github.com/Vesanmartin/mesatech-cloud.git (Rama: ep2-frontend-roles)"
@@ -297,7 +297,7 @@ sudo update-alternatives --set javac $(update-alternatives --list javac | grep 2
 # 2. Inicializar base de datos RDS Solicitudes (ingresar clave admin al pedirla)
 mysql -h mesatech-rds-solicitudes-sg.c1okasyq2r7x.us-east-1.rds.amazonaws.com -u admin -p << 'EOF'
 CREATE DATABASE IF NOT EXISTS solicitudes CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER IF NOT EXISTS 'app_solicitudes'@'%' IDENTIFIED BY 'SolicitudesDbPass2026!';
+CREATE USER IF NOT EXISTS 'app_solicitudes'@'%' IDENTIFIED BY '12345678';
 GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES ON solicitudes.* TO 'app_solicitudes'@'%';
 FLUSH PRIVILEGES;
 
@@ -337,7 +337,7 @@ cat << 'EOF' > ms-solicitudes/.env
 SERVER_PORT=8081
 DB_URL=jdbc:mysql://mesatech-rds-solicitudes-sg.c1okasyq2r7x.us-east-1.rds.amazonaws.com:3306/solicitudes
 DB_USER=app_solicitudes
-DB_PASSWORD=SolicitudesDbPass2026!
+DB_PASSWORD=12345678
 RABBIT_HOST=172.31.17.146
 RABBIT_PORT=5672
 RABBIT_VHOST=mesatech
@@ -378,7 +378,7 @@ sudo npm install -g serve
 # 2. Inicializar base de datos RDS Catálogo (ingresar clave admin al pedirla)
 mysql -h mesatech-catalogo-db.c1okasyq2r7x.us-east-1.rds.amazonaws.com -u admin -p << 'EOF'
 CREATE DATABASE IF NOT EXISTS catalogo CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER IF NOT EXISTS 'app_catalogo'@'%' IDENTIFIED BY 'CatalogoDbPass2026!';
+CREATE USER IF NOT EXISTS 'app_catalogo'@'%' IDENTIFIED BY '12345678';
 GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES ON catalogo.* TO 'app_catalogo'@'%';
 FLUSH PRIVILEGES;
 
@@ -419,7 +419,7 @@ cat << 'EOF' > ms-catalogo/.env
 SERVER_PORT=8082
 DB_URL=jdbc:mysql://mesatech-catalogo-db.c1okasyq2r7x.us-east-1.rds.amazonaws.com:3306/catalogo
 DB_USER=app_catalogo
-DB_PASSWORD=CatalogoDbPass2026!
+DB_PASSWORD=12345678
 RABBIT_HOST=172.31.17.146
 RABBIT_PORT=5672
 RABBIT_VHOST=mesatech
