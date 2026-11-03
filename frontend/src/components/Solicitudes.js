@@ -60,7 +60,7 @@ function Solicitudes({ usuarioActivo, prioridades = PRIORIDADES_BASE }) {
       }
     } catch (err) {
       setSolicitudes([]);
-      setError(`No se pudo conectar con el servidor BFF en AWS (${err.message}). Si reinició AWS Learner Lab, verifique que ms-catalogo y bff estén corriendo en EC2 A.`);
+      setError(`No se pudo conectar con el servidor BFF en AWS (${err.message}). Si reinició AWS Learner Lab, verifique que ms-catalogo y bff estén corriendo en EC2 B.`);
     } finally {
       setCargando(false);
     }
