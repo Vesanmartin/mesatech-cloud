@@ -1,8 +1,15 @@
 import { InteractionRequiredAuthError } from '@azure/msal-browser';
 import { apiRequest } from '../authConfig';
 
-// URL del BFF en AWS EC2 A (actualizada a la nueva IP pública de EC2 A tras reinicio)
-const BFF_URL = process.env.REACT_APP_BFF_URL || 'http://3.84.111.84:8080';
+// =========================================================================================
+// 📍 CONFIGURACIÓN DE IP DE AWS (ÚNICO LUGAR DONDE SE CAMBIA EN EL FRONTEND)
+// Cada vez que se reinicie AWS Academy Learner Lab y cambie la IP pública de EC2 A:
+// Cambia únicamente el valor de IP_PUBLICA_EC2_A y guarda este archivo.
+// React lo detectará de inmediato sin necesidad de reiniciar la consola.
+// =========================================================================================
+export const IP_PUBLICA_EC2_A = '3.84.111.84';
+const BFF_URL = `http://${IP_PUBLICA_EC2_A}:8080`;
+// =========================================================================================
 
 // Extrae un mensaje legible del cuerpo de error (los servicios responden {"error": "..."})
 function mensajeDeError(texto, status, path) {
