@@ -36,9 +36,6 @@ function Solicitudes({ usuarioActivo, prioridades = PRIORIDADES_BASE }) {
   const [mensajesEnCola, setMensajesEnCola] = useState(0);
   const [mensajesUnacked, setMensajesUnacked] = useState(0);
   const [consumidorActivo, setConsumidorActivo] = useState(true);
-  const [nombreCatTest, setNombreCatTest] = useState('');
-  const [descCatTest, setDescCatTest] = useState('');
-  const [probandoFlujo, setProbandoFlujo] = useState(false);
   const [logFlujo, setLogFlujo] = useState(null);
 
   const rolesHook = useRoles();
@@ -170,61 +167,6 @@ function Solicitudes({ usuarioActivo, prioridades = PRIORIDADES_BASE }) {
     }));
     setSolicitudParaAtencion(null);
     setTextoAtencion('');
-  };
-
-  // Función para probar el flujo de RabbitMQ (P1, P2 y P3)
-  const ejecutarPruebaRabbitMQ = async (e) => {
-    e.preventDefault();
-    if (!nombreCatTest.trim()) return;
-
-    setProbandoFlujo(true);
-    setLogFlujo({
-      tipo: 'info',
-      mensaje: `Paso 1: ms-catalogo persiste categoría "${nombreCatTest}" en RDS y emite evento a catalogo.exchange...`
-    });
-
-    try {
-      if (accounts && accounts.length > 0) {
-        await llamarBFF(instance, accounts[0], '/v1/categorias', {
-          method: 'POST',
-          body: JSON.stringify({ nombre: nombreCatTest, descripcion: descCatTest })
-        });
-      }
-
-      if (!consumidorActivo) {
-        setMensajesEnCola(prev => prev + 1);
-        setLogFlujo({
-          tipo: 'warning',
-          mensaje: `⏳ [Prueba P2 - Consumidor Detenido]: Mensaje encolado en 'solicitudes.catalogo.queue'. Como ms-solicitudes está detenido, el mensaje permanece acumulado en estado READY en el broker RabbitMQ.`
-        });
-        setProbandoFlujo(false);
-        return;
-      }
-
-      setMensajesUnacked(1);
-      setTimeout(async () => {
-        setMensajesUnacked(0);
-        setMensajesEnCola(0);
-
-        const nuevaCat = { id: categorias.length + 1, nombre: nombreCatTest };
-        setCategorias(prev => [...prev, nuevaCat]);
-
-        setLogFlujo({
-          tipo: 'success',
-          mensaje: `✅ [Prueba P1 - Flujo Exitoso]: ms-solicitudes consumió el mensaje desde 'solicitudes.catalogo.queue', confirmó con ACK y guardó la réplica local. "${nombreCatTest}" ya está disponible en el menú superior.`
-        });
-        setNombreCatTest('');
-        setDescCatTest('');
-        setProbandoFlujo(false);
-      }, 1200);
-
-    } catch (err) {
-      setLogFlujo({
-        tipo: 'danger',
-        mensaje: `Error en el flujo: ${err.message}`
-      });
-      setProbandoFlujo(false);
-    }
   };
 
   const toggleConsumidor = () => {
@@ -683,45 +625,6 @@ function Solicitudes({ usuarioActivo, prioridades = PRIORIDADES_BASE }) {
                   </div>
                 </Col>
               </Row>
-
-              {/* Formulario de Prueba de Flujo */}
-              <div className="mt-3 pt-2 border-top">
-                <small className="text-muted d-block mb-2">
-                  <strong>Publicar nueva categoría al broker para ver el comportamiento de la cola:</strong>
-                </small>
-                <Form onSubmit={ejecutarPruebaRabbitMQ}>
-                  <Row className="g-2 align-items-center">
-                    <Col md={4}>
-                      <Form.Control 
-                        size="sm"
-                        placeholder="Nombre de nueva categoría (ej: Impresoras)" 
-                        value={nombreCatTest}
-                        onChange={(e) => setNombreCatTest(e.target.value)}
-                        required
-                      />
-                    </Col>
-                    <Col md={5}>
-                      <Form.Control 
-                        size="sm"
-                        placeholder="Descripción (opcional)" 
-                        value={descCatTest}
-                        onChange={(e) => setDescCatTest(e.target.value)}
-                      />
-                    </Col>
-                    <Col md={3}>
-                      <Button 
-                        type="submit" 
-                        variant="primary" 
-                        size="sm" 
-                        className="w-100" 
-                        disabled={probandoFlujo}
-                      >
-                        {probandoFlujo ? 'Transmitiendo...' : 'Publicar en RabbitMQ'}
-                      </Button>
-                    </Col>
-                  </Row>
-                </Form>
-              </div>
 
               {logFlujo && (
                 <Alert variant={logFlujo.tipo} className="mt-3 mb-0 py-2 small" dismissible onClose={() => setLogFlujo(null)}>
