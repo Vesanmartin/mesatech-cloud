@@ -155,11 +155,12 @@ def create_guide_docx(filename):
         p.runs[0].font.size = Pt(9.5)
 
     data = [
-        ("EC2 A (Web & Catálogo)", "Frontend React (Puerto 80)\nBFF API Gateway (8080)\nms-catalogo (8082)", "IP Privada: 172.31.24.16\nIP Pública: 3.84.111.84", "22 (SSH)\n80 (HTTP React - 0.0.0.0/0)\n8080 (BFF - 0.0.0.0/0)\n8082 (172.31.0.0/16)"),
+        ("EC2 A (Gateway & Catálogo)", "BFF API Gateway (8080)\nms-catalogo (8082)", "IP Privada: 172.31.24.16\nIP Pública: 3.84.111.84", "22 (SSH)\n8080 (BFF - 0.0.0.0/0)\n8082 (172.31.0.0/16)"),
         ("EC2 B (Solicitudes)", "ms-solicitudes (8081)\nConsumidor RabbitMQ", "IP Privada: 172.31.29.191\nIP Pública: 184.73.123.56", "22 (SSH)\n8081 (172.31.0.0/16)"),
         ("EC2 C (RabbitMQ)", "Broker RabbitMQ (5672)\nDashboard Web (15672)", "IP Privada: 172.31.17.146\nIP Pública: 34.227.193.103", "22 (SSH)\n5672 (172.31.0.0/16)\n15672 (0.0.0.0/0)"),
         ("RDS Catálogo", "Base MySQL Exclusiva\n(Sin acceso público)", "mesatech-catalogo-db.c1okasyq2r7x.us-east-1.rds.amazonaws.com", "3306 (MySQL)\nSolo desde EC2 A"),
-        ("RDS Solicitudes", "Base MySQL Exclusiva\n(Sin acceso público)", "mesatech-rds-solicitudes-sg.c1okasyq2r7x.us-east-1.rds.amazonaws.com", "3306 (MySQL)\nSolo desde EC2 B")
+        ("RDS Solicitudes", "Base MySQL Exclusiva\n(Sin acceso público)", "mesatech-rds-solicitudes-sg.c1okasyq2r7x.us-east-1.rds.amazonaws.com", "3306 (MySQL)\nSolo desde EC2 B"),
+        ("Frontend (Local)", "React 18 SPA con MSAL Azure AD\nConectado al BFF en AWS", "http://localhost:3000\n(BFF: http://3.84.111.84:8080)", "3000 (React Dev Server)")
     ]
 
     for row_idx, row_data in enumerate(data):
@@ -177,20 +178,36 @@ def create_guide_docx(filename):
 
     doc.add_paragraph().paragraph_format.space_after = Pt(6)
 
+
+    p_nota_front = doc.add_paragraph()
+    r_nf = p_nota_front.add_run("Nota de Arquitectura sobre la Ejecución del Frontend:\n")
+    r_nf.bold = True
+    r_nf.font.color.rgb = RGBColor(43, 108, 176)
+    p_nota_front.add_run(
+        "Para garantizar la compatibilidad criptográfica obligatoria de la biblioteca MSAL (Microsoft Authentication Library) "
+        "y dar cumplimiento estricto a las políticas de seguridad de Microsoft Entra ID institucional, la aplicación cliente React "
+        "se ejecuta localmente en http://localhost:3000. Los navegadores modernos bloquean la API nativa window.crypto.subtle "
+        "cuando se accede por protocolo HTTP sobre direcciones IP públicas sin certificado SSL/TLS de confianza. "
+        "Por esta razón, la arquitectura desacoplada opera de manera híbrida y profesional: el frontend corre en localhost:3000 "
+        "consumiendo de forma transparente toda la infraestructura Cloud Native en AWS (EC2 A para el BFF Gateway y ms-catalogo, "
+        "EC2 B para ms-solicitudes, EC2 C para el broker RabbitMQ y dos instancias Amazon RDS MySQL independientes)."
+    )
+
     # Credenciales Estandarizadas
     p_cred = doc.add_paragraph()
     p_cred.add_run("Credenciales y Parámetros del Sistema:").bold = True
     p_cred.paragraph_format.space_after = Pt(2)
 
     cred_bullets = [
+        "URL de Acceso a la Aplicación (Frontend): http://localhost:3000",
+        "URL del Gateway BFF en AWS: http://3.84.111.84:8080",
+        "RabbitMQ Admin Web: admin / RabbitMQ2026! (URL: http://34.227.193.103:15672)",
         "Usuario Maestro RDS: admin (clave definida en consola)",
         "Usuario Aplicación RDS Catálogo: app_catalogo / CatalogoDbPass2026! (DB: catalogo)",
         "Usuario Aplicación RDS Solicitudes: app_solicitudes / SolicitudesDbPass2026! (DB: solicitudes)",
-        "RabbitMQ Admin Web: admin / RabbitMQ2026! (URL: http://34.227.193.103:15672)",
         "RabbitMQ Publicador: catalogo_publicador / CatalogoPass2026! (vHost: mesatech)",
         "RabbitMQ Consumidor: solicitudes_consumidor / SolicitudesPass2026! (vHost: mesatech)",
-        "Repositorio Git: https://github.com/Vesanmartin/mesatech-cloud.git (Rama: ep2-frontend-roles)",
-        "URL de Acceso al Frontend en AWS: http://3.84.111.84"
+        "Repositorio Git: https://github.com/Vesanmartin/mesatech-cloud.git (Rama: ep2-frontend-roles)"
     ]
     for b in cred_bullets:
         bp = doc.add_paragraph(style='List Bullet')
@@ -468,7 +485,7 @@ echo "Frontend accesible en: http://${IP_A}" """
 
     tests = [
         ("Prueba 1: Login Institucional y Lectura de Claims", 
-         "Abrir http://3.84.111.84 y hacer clic en 'Iniciar sesión con Microsoft'. "
+         "Abrir http://localhost:3000 y hacer clic en 'Iniciar sesión con Microsoft'. "
          "Evidencia: Se despliega el nombre del usuario, correo institucional y el badge oficial del rol asignado por Entra ID en la cabecera."),
         
         ("Prueba 2: Matriz de Roles (Control de Acceso)",
