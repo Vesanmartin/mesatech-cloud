@@ -1,8 +1,8 @@
 import { InteractionRequiredAuthError } from '@azure/msal-browser';
 import { apiRequest } from '../authConfig';
 
-// URL del API Gateway (configurable con REACT_APP_BFF_URL en frontend/.env)
-const BFF_URL = process.env.REACT_APP_BFF_URL || 'https://e2yhtyfdj8.execute-api.us-east-1.amazonaws.com';
+// URL del BFF en AWS EC2 A
+const BFF_URL = process.env.REACT_APP_BFF_URL || 'http://98.81.84.113:8080';
 
 // Extrae un mensaje legible del cuerpo de error (los servicios responden {"error": "..."})
 function mensajeDeError(texto, status, path) {
