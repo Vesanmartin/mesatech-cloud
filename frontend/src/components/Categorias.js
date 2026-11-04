@@ -44,20 +44,24 @@ function Categorias({ alActualizarPrioridades }) {
     try {
       if (accounts && accounts.length > 0) {
         setCargando(true);
-        const [catalogo, copia, prios] = await Promise.all([
+        const [resCat, resDisp, resPrio] = await Promise.allSettled([
           llamarBFF(instance, accounts[0], '/v1/categorias'),
           llamarBFF(instance, accounts[0], '/v1/categorias-disponibles'),
           llamarBFF(instance, accounts[0], '/v1/prioridades')
         ]);
-        if (catalogo && catalogo.length > 0) setCategorias(catalogo);
-        if (copia && copia.length > 0) setDisponibles(copia.map((c) => c.categoriaId));
-        if (prios && prios.length > 0) {
-          setPrioridades(prios);
-          if (alActualizarPrioridades) alActualizarPrioridades(prios.map(p => p.nombre));
+        if (resCat.status === 'fulfilled' && Array.isArray(resCat.value) && resCat.value.length > 0) {
+          setCategorias(resCat.value);
+        }
+        if (resDisp.status === 'fulfilled' && Array.isArray(resDisp.value)) {
+          setDisponibles(resDisp.value.map((c) => c.categoriaId));
+        }
+        if (resPrio.status === 'fulfilled' && Array.isArray(resPrio.value) && resPrio.value.length > 0) {
+          setPrioridades(resPrio.value);
+          if (alActualizarPrioridades) alActualizarPrioridades(resPrio.value.map(p => p.nombre));
         }
       }
     } catch (err) {
-      setError(`No se pudo conectar con el catálogo en AWS (${err.message}). Verifique que la instancia EC2 A y el BFF estén activos.`);
+      console.warn('Error al refrescar componentes de catálogo:', err);
     } finally {
       setCargando(false);
     }
