@@ -66,37 +66,40 @@ function Solicitudes({ usuarioActivo, prioridades = PRIORIDADES_BASE }) {
   const cargarCategorias = async () => {
     if (!accounts || accounts.length === 0) return null;
     try {
-      const [resDisponibles, resCatalogo] = await Promise.allSettled([
+      const [resDisponibles, resMetricas] = await Promise.allSettled([
         llamarBFF(instance, accounts[0], '/v1/categorias-disponibles'),
-        llamarBFF(instance, accounts[0], '/v1/categorias')
+        llamarBFF(instance, accounts[0], '/v1/cola/metricas')
       ]);
 
-      const totalCatalogo = resCatalogo.status === 'fulfilled' && Array.isArray(resCatalogo.value)
-        ? resCatalogo.value.length
-        : 0;
-
+      // 1. Actualizar categorías réplica local
       if (resDisponibles.status === 'fulfilled' && Array.isArray(resDisponibles.value)) {
         const copias = resDisponibles.value;
         setCategorias(copias.map(c => ({ id: c.categoriaId, nombre: c.nombre })));
-        setConsumidorActivo(true);
-        const pendientes = Math.max(0, totalCatalogo - copias.length);
-        setMensajesEnCola(pendientes);
-        setLogFlujo(null);
-        return copias;
+      }
+
+      // 2. Actualizar métricas reales de RabbitMQ en tiempo real
+      if (resMetricas.status === 'fulfilled' && resMetricas.value) {
+        const m = resMetricas.value;
+        setMensajesEnCola(m.ready ?? 0);
+        setMensajesUnacked(m.unacked ?? 0);
+        const activo = (m.consumers ?? 0) > 0;
+        setConsumidorActivo(activo);
+
+        if (!activo) {
+          setLogFlujo({
+            tipo: 'warning',
+            mensaje: `⏸️ [Consumidor Detenido en EC2 B]: ms-solicitudes está apagado. Los ${m.ready ?? 0} mensajes emitidos permanecen retenidos en estado Ready en solicitudes.catalogo.queue.`
+          });
+        } else {
+          setLogFlujo(null);
+        }
       } else {
-        // ms-solicitudes no responde (consumidor detenido en EC2 B)
-        setConsumidorActivo(false);
-        const pendientes = Math.max(1, totalCatalogo - (categorias ? categorias.length : 0));
-        setMensajesEnCola(pendientes);
-        setLogFlujo({
-          tipo: 'warning',
-          mensaje: '⏸️ [Consumidor Detenido en EC2 B]: ms-solicitudes está apagado. Los eventos emitidos por Catálogo se retienen en la cola durable de RabbitMQ sin perderse.'
-        });
-        return null;
+        // Fallback
+        const activo = resDisponibles.status === 'fulfilled';
+        setConsumidorActivo(activo);
       }
     } catch (err) {
       console.warn('Error al verificar réplica local:', err.message);
-      setConsumidorActivo(false);
     }
     return null;
   };
