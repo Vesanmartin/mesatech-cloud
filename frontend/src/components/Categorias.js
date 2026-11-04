@@ -30,7 +30,14 @@ function Categorias({ alActualizarPrioridades }) {
   const [tabActiva, setTabActiva] = useState('categorias');
 
   const [categorias, setCategorias] = useState(CATEGORIAS_INICIALES);
-  const [disponibles, setDisponibles] = useState([1, 2, 3, 4]);
+  const [disponibles, setDisponibles] = useState(() => {
+    try {
+      const cache = localStorage.getItem('mesatech_disponibles_cache');
+      return cache ? JSON.parse(cache) : [1, 2, 3, 4];
+    } catch {
+      return [1, 2, 3, 4];
+    }
+  });
   const [formCat, setFormCat] = useState(FORMULARIO_CAT_VACIO);
 
   const [prioridades, setPrioridades] = useState(PRIORIDADES_INICIALES);
@@ -53,7 +60,9 @@ function Categorias({ alActualizarPrioridades }) {
           setCategorias(resCat.value);
         }
         if (resDisp.status === 'fulfilled' && Array.isArray(resDisp.value)) {
-          setDisponibles(resDisp.value.map((c) => c.categoriaId));
+          const ids = resDisp.value.map((c) => c.categoriaId);
+          setDisponibles(ids);
+          try { localStorage.setItem('mesatech_disponibles_cache', JSON.stringify(ids)); } catch (e) {}
         }
         if (resPrio.status === 'fulfilled' && Array.isArray(resPrio.value) && resPrio.value.length > 0) {
           setPrioridades(resPrio.value);
