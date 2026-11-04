@@ -66,13 +66,37 @@ function Solicitudes({ usuarioActivo, prioridades = PRIORIDADES_BASE }) {
   const cargarCategorias = async () => {
     if (!accounts || accounts.length === 0) return null;
     try {
-      const datos = await llamarBFF(instance, accounts[0], '/v1/categorias-disponibles');
-      if (datos && Array.isArray(datos) && datos.length > 0) {
-        setCategorias(datos.map(c => ({ id: c.categoriaId, nombre: c.nombre })));
-        return datos;
+      const [resDisponibles, resCatalogo] = await Promise.allSettled([
+        llamarBFF(instance, accounts[0], '/v1/categorias-disponibles'),
+        llamarBFF(instance, accounts[0], '/v1/categorias')
+      ]);
+
+      const totalCatalogo = resCatalogo.status === 'fulfilled' && Array.isArray(resCatalogo.value)
+        ? resCatalogo.value.length
+        : 0;
+
+      if (resDisponibles.status === 'fulfilled' && Array.isArray(resDisponibles.value)) {
+        const copias = resDisponibles.value;
+        setCategorias(copias.map(c => ({ id: c.categoriaId, nombre: c.nombre })));
+        setConsumidorActivo(true);
+        const pendientes = Math.max(0, totalCatalogo - copias.length);
+        setMensajesEnCola(pendientes);
+        setLogFlujo(null);
+        return copias;
+      } else {
+        // ms-solicitudes no responde (consumidor detenido en EC2 B)
+        setConsumidorActivo(false);
+        const pendientes = Math.max(1, totalCatalogo - (categorias ? categorias.length : 0));
+        setMensajesEnCola(pendientes);
+        setLogFlujo({
+          tipo: 'warning',
+          mensaje: '⏸️ [Consumidor Detenido en EC2 B]: ms-solicitudes está apagado. Los eventos emitidos por Catálogo se retienen en la cola durable de RabbitMQ sin perderse.'
+        });
+        return null;
       }
     } catch (err) {
-      console.warn('Categorías no disponibles desde BFF:', err.message);
+      console.warn('Error al verificar réplica local:', err.message);
+      setConsumidorActivo(false);
     }
     return null;
   };
@@ -80,6 +104,12 @@ function Solicitudes({ usuarioActivo, prioridades = PRIORIDADES_BASE }) {
   useEffect(() => {
     cargarSolicitudes();
     cargarCategorias();
+
+    const interval = setInterval(() => {
+      cargarCategorias();
+    }, 4000);
+
+    return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accounts]);
 
@@ -167,34 +197,6 @@ function Solicitudes({ usuarioActivo, prioridades = PRIORIDADES_BASE }) {
     }));
     setSolicitudParaAtencion(null);
     setTextoAtencion('');
-  };
-
-  const toggleConsumidor = () => {
-    if (consumidorActivo) {
-      setConsumidorActivo(false);
-      setLogFlujo({
-        tipo: 'warning',
-        mensaje: `⏸️ [Prueba P2]: Consumidor ms-solicitudes detenido. Los mensajes entrantes se acumularán en la cola durable.`
-      });
-    } else {
-      setConsumidorActivo(true);
-      if (mensajesEnCola > 0) {
-        setMensajesUnacked(mensajesEnCola);
-        setTimeout(() => {
-          setMensajesUnacked(0);
-          setMensajesEnCola(0);
-          setLogFlujo({
-            tipo: 'success',
-            mensaje: `✅ [Prueba P3 - Consumo Diferido]: ms-solicitudes se reconectó. La cola se vació (Ready: 0) y los mensajes fueron consumidos con ACK.`
-          });
-        }, 1000);
-      } else {
-        setLogFlujo({
-          tipo: 'info',
-          mensaje: `▶️ Consumidor ms-solicitudes activo y a la escucha de solicitudes.catalogo.queue.`
-        });
-      }
-    }
   };
 
   // Filtrado estricto por actor de negocio:
@@ -579,15 +581,24 @@ function Solicitudes({ usuarioActivo, prioridades = PRIORIDADES_BASE }) {
             <div className="p-3 border rounded bg-white mb-3">
               <div className="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
                 <h6 className="mb-0">
-                  📊 Monitor de Estado de la Cola: <code>solicitudes.catalogo.queue</code>
+                  📊 Monitor en Vivo de Sincronización RabbitMQ: <code>solicitudes.catalogo.queue</code>
                 </h6>
                 <div className="d-flex gap-2">
                   <Button 
-                    variant={consumidorActivo ? "outline-danger" : "outline-success"} 
+                    variant="outline-primary" 
                     size="sm"
-                    onClick={toggleConsumidor}
+                    href="http://3.84.227.25:15672/#/queues/mesatech/solicitudes.catalogo.queue"
+                    target="_blank"
+                    rel="noopener noreferrer"
                   >
-                    {consumidorActivo ? "⏸️ Detener Consumidor (Prueba P2)" : "▶️ Iniciar Consumidor (Prueba P3)"}
+                    🔗 Abrir Consola RabbitMQ (:15672)
+                  </Button>
+                  <Button 
+                    variant="outline-success" 
+                    size="sm"
+                    onClick={cargarCategorias}
+                  >
+                    ↻ Actualizar Estado
                   </Button>
                 </div>
               </div>
@@ -610,17 +621,17 @@ function Solicitudes({ usuarioActivo, prioridades = PRIORIDADES_BASE }) {
                 </Col>
                 <Col md={3} xs={6}>
                   <div className="p-2 border rounded bg-light">
-                    <small className="text-muted d-block">Consumidores Activos</small>
+                    <small className="text-muted d-block">Consumidor en EC2 B</small>
                     <span className={`h4 mb-0 fw-bold ${consumidorActivo ? 'text-success' : 'text-danger'}`}>
-                      {consumidorActivo ? '1 (ms-solicitudes)' : '0 (Detenido)'}
+                      {consumidorActivo ? '1 (En línea)' : '0 (Detenido)'}
                     </span>
                   </div>
                 </Col>
                 <Col md={3} xs={6}>
                   <div className="p-2 border rounded bg-light">
-                    <small className="text-muted d-block">Estado de la Cola</small>
+                    <small className="text-muted d-block">Estado de Sincronización</small>
                     <span className="badge mt-2" style={{ backgroundColor: consumidorActivo ? '#198754' : '#ffc107', color: consumidorActivo ? '#fff' : '#000' }}>
-                      {consumidorActivo ? (mensajesEnCola > 0 ? 'Procesando' : 'En línea (Idle)') : 'Acumulando mensajes'}
+                      {consumidorActivo ? (mensajesEnCola > 0 ? 'Sincronizando...' : 'Al día (Idle)') : 'Mensajes Retenidos en Cola'}
                     </span>
                   </div>
                 </Col>
