@@ -120,6 +120,16 @@ function Solicitudes({ usuarioActivo, prioridades = PRIORIDADES_BASE }) {
     setFormulario({ ...formulario, [e.target.name]: e.target.value });
   };
 
+  const abrirConsolaRabbit = () => {
+    let savedIp = localStorage.getItem('rabbit_public_ip') || '3.84.227.25';
+    const nuevaIp = window.prompt('Ingrese la IP pública actual de la instancia EC2 C (RabbitMQ):', savedIp);
+    if (nuevaIp && nuevaIp.trim()) {
+      const ipLimpia = nuevaIp.trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/:.*$/, '');
+      localStorage.setItem('rabbit_public_ip', ipLimpia);
+      window.open(`http://${ipLimpia}:15672/#/queues/mesatech/solicitudes.catalogo.queue`, '_blank', 'noopener,noreferrer');
+    }
+  };
+
   const crear = async (e) => {
     e.preventDefault();
     setError(null);
@@ -590,9 +600,7 @@ function Solicitudes({ usuarioActivo, prioridades = PRIORIDADES_BASE }) {
                   <Button 
                     variant="outline-primary" 
                     size="sm"
-                    href="http://3.84.227.25:15672/#/queues/mesatech/solicitudes.catalogo.queue"
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    onClick={abrirConsolaRabbit}
                   >
                     🔗 Abrir Consola RabbitMQ (:15672)
                   </Button>
