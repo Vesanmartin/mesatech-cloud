@@ -1,136 +1,74 @@
 import { useState, useEffect } from 'react';
 import { useMsal } from '@azure/msal-react';
-import { Table, Spinner, Alert, Card, Form, Button, Row, Col, Badge, Modal } from 'react-bootstrap';
+import { Table, Spinner, Alert, Card, Form, Button, Row, Col, Badge } from 'react-bootstrap';
 import { llamarBFF } from '../api/bffClient';
 import { useRoles } from '../hooks/useRoles';
 
-// Categorías de ejemplo base (se complementan con las recibidas desde RabbitMQ)
-const CATEGORIAS_DEFAULT = [
-  { id: 1, nombre: 'Hardware' },
-  { id: 2, nombre: 'Software' },
-  { id: 3, nombre: 'Redes' },
-  { id: 4, nombre: 'Accesos y Seguridad' },
-  { id: 5, nombre: 'Soporte General' }
-];
-
-const PRIORIDADES_BASE = ['Baja', 'Media', 'Alta', 'Urgente'];
 const ESTADOS = ['CREADA', 'ASIGNADA', 'EN_PROCESO', 'RESUELTA', 'CERRADA', 'CANCELADA'];
-const FORMULARIO_VACIO = { titulo: '', descripcion: '', categoria: '', prioridad: '' };
+const FORMULARIO_VACIO = { titulo: '', descripcion: '', categoriaId: '', prioridad: '' };
 
-// Solicitudes iniciales con operadores y notas de atención para pruebas
-const SOLICITUDES_DEMO = [
-  { 
-    id: 101, 
-    titulo: 'Problema con cargador de notebook', 
-    descripcion: 'El cargador tiene falso contacto y no carga la batería.', 
-    categoria: 'Hardware', 
-    prioridad: 'Alta', 
-    estado: 'CREADA', 
-    operador: '', 
-    atencion: '',
-    cliente: 'Ana Silva (Cliente)' 
-  },
-  { 
-    id: 102, 
-    titulo: 'Configuración de acceso VPN corporativo', 
-    descripcion: 'Solicito credenciales y perfil de VPN para trabajo remoto.', 
-    categoria: 'Redes', 
-    prioridad: 'Media', 
-    estado: 'ASIGNADA', 
-    operador: 'Carlos Gómez (Operador)', 
-    atencion: '',
-    cliente: 'Roberto Díaz' 
-  },
-  { 
-    id: 103, 
-    titulo: 'Licencia para software de diseño', 
-    descripcion: 'Requiero activación de Adobe Illustrator.', 
-    categoria: 'Software', 
-    prioridad: 'Baja', 
-    estado: 'RESUELTA', 
-    operador: 'Carlos Gómez (Operador)', 
-    atencion: 'Licencia asignada en panel de administración y verificada con el usuario.',
-    cliente: 'Ana Silva (Cliente)' 
-  },
-  { 
-    id: 104, 
-    titulo: 'Reemplazo de teclado dañado', 
-    descripcion: 'Teclas espacio y enter no responden.', 
-    categoria: 'Hardware', 
-    prioridad: 'Media', 
-    estado: 'EN_PROCESO', 
-    operador: 'Felipe Torres (Operador)', 
-    atencion: 'Equipo recepcionado en laboratorio.',
-    cliente: 'Juan Morales' 
-  }
-];
-
-function Solicitudes({ usuarioActivo, prioridades = PRIORIDADES_BASE }) {
+/**
+ * Solicitudes (todo sale del backend, no hay datos de ejemplo):
+ * - Categorias: GET /v1/categorias-disponibles = copia local que ms-solicitudes recibio por RabbitMQ.
+ * - Prioridades: GET /v1/prioridades (ms-catalogo).
+ * - Cliente: ve sus solicitudes (GET /v1/solicitudes/mias).
+ * - Operador y Administrador: ven todas (GET /v1/solicitudes) y cambian el estado (PATCH).
+ *   La regla "no RESUELTA sin EN_PROCESO" la valida ms-solicitudes, no React.
+ */
+function Solicitudes({ usuarioActivo }) {
   const { instance, accounts } = useMsal();
-  const [solicitudes, setSolicitudes] = useState(SOLICITUDES_DEMO);
-  const [categorias, setCategorias] = useState(CATEGORIAS_DEFAULT);
-  const [cargando, setCargando] = useState(false);
+  const [solicitudes, setSolicitudes] = useState([]);
+  const [categorias, setCategorias] = useState([]);
+  const [prioridades, setPrioridades] = useState([]);
+  const [cargando, setCargando] = useState(true);
   const [error, setError] = useState(null);
+  const [aviso, setAviso] = useState(null);
   const [formulario, setFormulario] = useState(FORMULARIO_VACIO);
 
-  // Filtro de pestañas para Operador: 'DISPONIBLES' | 'MIS_ASIGNADAS'
-  const [filtroOperador, setFiltroOperador] = useState('DISPONIBLES');
-
-  // Modal para que el Operador registre atención
-  const [solicitudParaAtencion, setSolicitudParaAtencion] = useState(null);
-  const [textoAtencion, setTextoAtencion] = useState('');
-
-  // Estados del Monitor de Cola RabbitMQ
-  const [mensajesEnCola, setMensajesEnCola] = useState(0);
-  const [mensajesUnacked, setMensajesUnacked] = useState(0);
-  const [consumidorActivo, setConsumidorActivo] = useState(true);
-  const [nombreCatTest, setNombreCatTest] = useState('');
-  const [descCatTest, setDescCatTest] = useState('');
-  const [probandoFlujo, setProbandoFlujo] = useState(false);
-  const [logFlujo, setLogFlujo] = useState(null);
-
   const rolesHook = useRoles();
-  const roles = usuarioActivo?.roles || rolesHook;
+  const roles = usuarioActivo?.roles?.length ? usuarioActivo.roles : rolesHook;
   const esOperador = roles.includes('ROLE_OPERADOR');
   const esAdmin = roles.includes('ROLE_ADMINISTRADOR');
   const puedeGestionar = esOperador || esAdmin;
 
+  const llamar = (path, options) => llamarBFF(instance, accounts[0], path, options);
+
   const cargarSolicitudes = async () => {
     try {
-      if (accounts && accounts.length > 0) {
-        setCargando(true);
-        const datos = await llamarBFF(instance, accounts[0], '/v1/solicitudes/mias');
-        if (datos && datos.length > 0) {
-          setSolicitudes(datos.map(d => ({ ...d, operador: d.operador || '', atencion: d.atencion || '' })));
-        }
-      }
+      const path = puedeGestionar ? '/v1/solicitudes' : '/v1/solicitudes/mias';
+      setSolicitudes((await llamar(path)) || []);
     } catch (err) {
-      console.warn('Backend offline, usando datos locales:', err.message);
-    } finally {
-      setCargando(false);
+      setError(`No se pudieron cargar las solicitudes: ${err.message}`);
     }
   };
 
   const cargarCategorias = async () => {
     try {
-      if (accounts && accounts.length > 0) {
-        const datos = await llamarBFF(instance, accounts[0], '/v1/categorias-disponibles');
-        if (datos && datos.length > 0) {
-          setCategorias(datos.map(c => ({ id: c.categoriaId, nombre: c.nombre })));
-          return datos;
-        }
-      }
-    } catch {
-      // Mantiene categorías locales si el backend no responde
+      setCategorias((await llamar('/v1/categorias-disponibles')) || []);
+    } catch (err) {
+      setError(`No se pudieron cargar las categorías disponibles: ${err.message}`);
     }
-    return null;
+  };
+
+  const cargarPrioridades = async () => {
+    try {
+      setPrioridades((await llamar('/v1/prioridades')) || []);
+    } catch (err) {
+      setError(`No se pudieron cargar las prioridades: ${err.message}`);
+    }
   };
 
   useEffect(() => {
-    cargarSolicitudes();
-    cargarCategorias();
+    if (accounts.length === 0) return;
+    const cargarTodo = async () => {
+      setCargando(true);
+      await Promise.all([cargarSolicitudes(), cargarCategorias(), cargarPrioridades()]);
+      setCargando(false);
+    };
+    cargarTodo();
+    // Se vuelve a cargar cuando llegan los roles (cambia la ruta de solicitudes)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [accounts, puedeGestionar]);
 
   const manejarCambio = (e) => {
     setFormulario({ ...formulario, [e.target.name]: e.target.value });
@@ -138,208 +76,51 @@ function Solicitudes({ usuarioActivo, prioridades = PRIORIDADES_BASE }) {
 
   const crear = async (e) => {
     e.preventDefault();
+    setError(null);
+    setAviso(null);
     try {
-      const catObj = categorias.find(c => c.nombre === formulario.categoria) || { id: 1, nombre: formulario.categoria };
-      
-      if (accounts && accounts.length > 0) {
-        await llamarBFF(instance, accounts[0], '/v1/solicitudes', {
-          method: 'POST',
-          body: JSON.stringify({
-            ...formulario,
-            categoriaId: catObj.id,
-            categoria: catObj.nombre
-          })
-        });
-        cargarSolicitudes();
-      } else {
-        const nuevaLocal = {
-          id: solicitudes.length + 101,
+      const creada = await llamar('/v1/solicitudes', {
+        method: 'POST',
+        body: JSON.stringify({
           titulo: formulario.titulo,
           descripcion: formulario.descripcion,
-          categoria: catObj.nombre,
-          prioridad: formulario.prioridad,
-          estado: 'CREADA',
-          operador: '',
-          atencion: '',
-          cliente: usuarioActivo?.nombre || 'Cliente'
-        };
-        setSolicitudes([nuevaLocal, ...solicitudes]);
-      }
+          categoriaId: Number(formulario.categoriaId),
+          prioridad: formulario.prioridad
+        })
+      });
+      setAviso(`Solicitud #${creada.id} creada con la categoría "${creada.categoria}".`);
       setFormulario(FORMULARIO_VACIO);
+      cargarSolicitudes();
     } catch (err) {
+      // 422: la categoria aun no llega a Solicitudes por RabbitMQ
       setError(err.message);
     }
   };
 
-  // Administrador: cambiar la prioridad de cualquier solicitud ya creada
-  const cambiarPrioridad = (id, nuevaPrioridad) => {
-    setSolicitudes(solicitudes.map(s => s.id === id ? { ...s, prioridad: nuevaPrioridad } : s));
-  };
-
-  // Operador / Admin: cambiar estado de solicitud
   const cambiarEstado = async (id, nuevoEstado) => {
+    setError(null);
+    setAviso(null);
     try {
-      if (accounts && accounts.length > 0) {
-        await llamarBFF(instance, accounts[0], `/v1/solicitudes/${id}/estado?nuevoEstado=${nuevoEstado}`, {
-          method: 'PATCH'
-        });
-        cargarSolicitudes();
-      } else {
-        setSolicitudes(solicitudes.map(s => s.id === id ? { ...s, estado: nuevoEstado } : s));
-      }
+      await llamar(`/v1/solicitudes/${id}/estado?nuevoEstado=${nuevoEstado}`, { method: 'PATCH' });
+      setAviso(`Solicitud #${id} cambió a ${nuevoEstado}.`);
     } catch (err) {
+      // 400: regla de negocio (no se puede RESUELTA sin pasar por EN_PROCESO)
       setError(err.message);
     }
+    cargarSolicitudes(); // siempre muestra el estado real guardado en RDS Solicitudes
   };
 
-  // Operador: auto-asignarse una solicitud disponible
-  const autoAsignarse = (id) => {
-    setSolicitudes(solicitudes.map(s => {
-      if (s.id === id) {
-        return { 
-          ...s, 
-          operador: usuarioActivo?.nombre || 'Operador Asignado', 
-          estado: 'ASIGNADA' 
-        };
-      }
-      return s;
-    }));
-  };
-
-  // Abrir modal de atención
-  const abrirModalAtencion = (s) => {
-    setSolicitudParaAtencion(s);
-    setTextoAtencion(s.atencion || '');
-  };
-
-  // Guardar atención realizada y opcionalmente cambiar estado
-  const guardarAtencion = (nuevoEstado) => {
-    if (!solicitudParaAtencion) return;
-    setSolicitudes(solicitudes.map(s => {
-      if (s.id === solicitudParaAtencion.id) {
-        return { 
-          ...s, 
-          atencion: textoAtencion,
-          estado: nuevoEstado || s.estado
-        };
-      }
-      return s;
-    }));
-    setSolicitudParaAtencion(null);
-    setTextoAtencion('');
-  };
-
-  // Función para probar el flujo de RabbitMQ (P1, P2 y P3)
-  const ejecutarPruebaRabbitMQ = async (e) => {
-    e.preventDefault();
-    if (!nombreCatTest.trim()) return;
-
-    setProbandoFlujo(true);
-    setLogFlujo({
-      tipo: 'info',
-      mensaje: `Paso 1: ms-catalogo persiste categoría "${nombreCatTest}" en RDS y emite evento a catalogo.exchange...`
-    });
-
-    try {
-      if (accounts && accounts.length > 0) {
-        await llamarBFF(instance, accounts[0], '/v1/categorias', {
-          method: 'POST',
-          body: JSON.stringify({ nombre: nombreCatTest, descripcion: descCatTest })
-        });
-      }
-
-      if (!consumidorActivo) {
-        setMensajesEnCola(prev => prev + 1);
-        setLogFlujo({
-          tipo: 'warning',
-          mensaje: `⏳ [Prueba P2 - Consumidor Detenido]: Mensaje encolado en 'solicitudes.catalogo.queue'. Como ms-solicitudes está detenido, el mensaje permanece acumulado en estado READY en el broker RabbitMQ.`
-        });
-        setProbandoFlujo(false);
-        return;
-      }
-
-      setMensajesUnacked(1);
-      setTimeout(async () => {
-        setMensajesUnacked(0);
-        setMensajesEnCola(0);
-
-        const nuevaCat = { id: categorias.length + 1, nombre: nombreCatTest };
-        setCategorias(prev => [...prev, nuevaCat]);
-
-        setLogFlujo({
-          tipo: 'success',
-          mensaje: `✅ [Prueba P1 - Flujo Exitoso]: ms-solicitudes consumió el mensaje desde 'solicitudes.catalogo.queue', confirmó con ACK y guardó la réplica local. "${nombreCatTest}" ya está disponible en el menú superior.`
-        });
-        setNombreCatTest('');
-        setDescCatTest('');
-        setProbandoFlujo(false);
-      }, 1200);
-
-    } catch (err) {
-      setLogFlujo({
-        tipo: 'danger',
-        mensaje: `Error en el flujo: ${err.message}`
-      });
-      setProbandoFlujo(false);
-    }
-  };
-
-  const toggleConsumidor = () => {
-    if (consumidorActivo) {
-      setConsumidorActivo(false);
-      setLogFlujo({
-        tipo: 'warning',
-        mensaje: `⏸️ [Prueba P2]: Consumidor ms-solicitudes detenido. Los mensajes entrantes se acumularán en la cola durable.`
-      });
-    } else {
-      setConsumidorActivo(true);
-      if (mensajesEnCola > 0) {
-        setMensajesUnacked(mensajesEnCola);
-        setTimeout(() => {
-          setMensajesUnacked(0);
-          setMensajesEnCola(0);
-          setLogFlujo({
-            tipo: 'success',
-            mensaje: `✅ [Prueba P3 - Consumo Diferido]: ms-solicitudes se reconectó. La cola se vació (Ready: 0) y los mensajes fueron consumidos con ACK.`
-          });
-        }, 1000);
-      } else {
-        setLogFlujo({
-          tipo: 'info',
-          mensaje: `▶️ Consumidor ms-solicitudes activo y a la escucha de solicitudes.catalogo.queue.`
-        });
-      }
-    }
-  };
-
-  // Filtrado estricto por actor de negocio:
-  // - Administrador: Ve TODAS las solicitudes (visión global de la organización).
-  // - Operador: Solo ve disponibles (sin asignar) O las asignadas a él.
-  // - Cliente: Ve ÚNICAMENTE sus solicitudes propias (consulta de estado y seguimiento).
-  const solicitudesFiltradas = solicitudes.filter(s => {
-    if (esAdmin) {
-      return true;
-    }
-    if (esOperador) {
-      const miNombre = usuarioActivo?.nombre || '';
-      const esMia = s.operador && s.operador.includes(miNombre);
-      const esDisponible = !s.operador || s.operador === '';
-      if (filtroOperador === 'DISPONIBLES') {
-        return esDisponible;
-      } else {
-        return esMia;
-      }
-    }
-    // Para Cliente: ver sus solicitudes
-    const miNombre = usuarioActivo?.nombre || '';
-    return !s.cliente || s.cliente === miNombre || s.cliente.includes(miNombre);
-  });
+  const colorEstado = (estado) => ({
+    RESUELTA: 'success', CERRADA: 'dark', EN_PROCESO: 'primary',
+    ASIGNADA: 'info', CANCELADA: 'danger'
+  }[estado] || 'secondary');
 
   if (cargando) return <Spinner animation="border" />;
 
   return (
     <div>
       {error && <Alert variant="danger" onClose={() => setError(null)} dismissible>{error}</Alert>}
+      {aviso && <Alert variant="success" onClose={() => setAviso(null)} dismissible>{aviso}</Alert>}
 
       {/* Formulario de Nueva Solicitud */}
       <Card className="mb-4 shadow-sm">
@@ -349,49 +130,59 @@ function Solicitudes({ usuarioActivo, prioridades = PRIORIDADES_BASE }) {
             <Row className="g-3">
               <Col md={6}>
                 <Form.Label>Título</Form.Label>
-                <Form.Control 
-                  name="titulo" 
-                  value={formulario.titulo} 
-                  onChange={manejarCambio} 
+                <Form.Control
+                  name="titulo"
+                  value={formulario.titulo}
+                  onChange={manejarCambio}
                   placeholder="Ej: Problemas de conexión a VPN"
-                  required 
+                  required
                 />
               </Col>
               <Col md={6}>
                 <Form.Label>Descripción</Form.Label>
-                <Form.Control 
-                  name="descripcion" 
-                  value={formulario.descripcion} 
-                  onChange={manejarCambio} 
+                <Form.Control
+                  name="descripcion"
+                  value={formulario.descripcion}
+                  onChange={manejarCambio}
                   placeholder="Detalle de la solicitud"
+                  required
                 />
               </Col>
-              <Col md={3}>
-                <Form.Label>Categoría {esAdmin && <small className="text-muted">(RabbitMQ)</small>}</Form.Label>
-                <Form.Select 
-                  name="categoria" 
-                  value={formulario.categoria} 
-                  onChange={manejarCambio} 
-                  required
-                >
-                  <option value="">Seleccionar categoría</option>
-                  {categorias.map((c) => (
-                    <option key={c.id} value={c.nombre}>{c.nombre}</option>
-                  ))}
-                </Form.Select>
-                {esAdmin && <Form.Text muted>Sincronizado vía RabbitMQ</Form.Text>}
+              <Col md={6}>
+                <Form.Label>Categoría</Form.Label>
+                <div className="d-flex gap-2">
+                  <Form.Select
+                    name="categoriaId"
+                    value={formulario.categoriaId}
+                    onChange={manejarCambio}
+                    required
+                  >
+                    <option value="">Seleccionar categoría</option>
+                    {categorias.map((c) => (
+                      <option key={c.categoriaId} value={c.categoriaId}>{c.nombre}</option>
+                    ))}
+                  </Form.Select>
+                  <Button variant="outline-secondary" onClick={cargarCategorias} title="Volver a consultar las categorías disponibles">
+                    ↻
+                  </Button>
+                </div>
+                <Form.Text muted>
+                  {categorias.length === 0
+                    ? 'Aún no hay categorías disponibles. Si se acaba de crear una, espera unos segundos y presiona ↻.'
+                    : 'Solo aparecen las categorías que ya llegaron a Solicitudes.'}
+                </Form.Text>
               </Col>
-              <Col md={3}>
+              <Col md={6}>
                 <Form.Label>Prioridad</Form.Label>
-                <Form.Select 
-                  name="prioridad" 
-                  value={formulario.prioridad} 
-                  onChange={manejarCambio} 
+                <Form.Select
+                  name="prioridad"
+                  value={formulario.prioridad}
+                  onChange={manejarCambio}
                   required
                 >
                   <option value="">Seleccionar prioridad</option>
                   {prioridades.map((p) => (
-                    <option key={p} value={p}>{p}</option>
+                    <option key={p.id} value={p.nombre}>{p.nombre}</option>
                   ))}
                 </Form.Select>
               </Col>
@@ -401,115 +192,47 @@ function Solicitudes({ usuarioActivo, prioridades = PRIORIDADES_BASE }) {
         </Card.Body>
       </Card>
 
-      {/* Barra de Filtros y Permisos según el Actor de Negocio */}
+      {/* Listado según el rol */}
       <div className="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
         <div>
           <h5 className="mb-0 d-inline me-2">Listado de solicitudes</h5>
-          {esAdmin && <Badge bg="primary">Visión Global (Administrador: Edición de Prioridad y Estados)</Badge>}
-          {esOperador && <Badge bg="warning" text="dark">Atención de Operador: Solo Disponibles y Asignadas a mí</Badge>}
-          {!puedeGestionar && <Badge bg="secondary">Mis Solicitudes Personales (Solo Consulta de Estado)</Badge>}
+          {puedeGestionar
+            ? <Badge bg="primary">Todas las solicitudes (Operador / Administrador)</Badge>
+            : <Badge bg="secondary">Mis solicitudes (solo consulta de estado)</Badge>}
         </div>
-
-        {/* Filtro exclusivo de Operador: Pestañas de Disponibles vs Mis Asignadas */}
-        {esOperador && (
-          <div className="btn-group btn-group-sm">
-            <Button 
-              variant={filtroOperador === 'DISPONIBLES' ? 'primary' : 'outline-primary'}
-              onClick={() => setFiltroOperador('DISPONIBLES')}
-            >
-              📋 Disponibles sin asignar ({solicitudes.filter(s => !s.operador || s.operador === '').length})
-            </Button>
-            <Button 
-              variant={filtroOperador === 'MIS_ASIGNADAS' ? 'success' : 'outline-success'}
-              onClick={() => setFiltroOperador('MIS_ASIGNADAS')}
-            >
-              🛠️ Mis solicitudes asignadas ({solicitudes.filter(s => s.operador && s.operador.includes(usuarioActivo?.nombre || '')).length})
-            </Button>
-          </div>
-        )}
+        <Button variant="outline-secondary" size="sm" onClick={cargarSolicitudes}>↻ Actualizar</Button>
       </div>
 
-      {/* Tabla de Solicitudes con permisos exactos por rol */}
       <Table striped bordered hover responsive className="bg-white shadow-sm">
         <thead className="table-light">
           <tr>
             <th style={{ width: '60px' }}>ID</th>
-            <th>Título y Detalle</th>
-            <th style={{ width: '150px' }}>Cliente</th>
-            <th style={{ width: '120px' }}>Categoría</th>
-            <th style={{ width: '130px' }}>Prioridad</th>
-            <th style={{ width: '190px' }}>Operador Asignado</th>
-            <th style={{ width: '150px' }}>Estado</th>
-            <th style={{ width: '130px' }}>Acción</th>
+            <th>Título y detalle</th>
+            {puedeGestionar && <th style={{ width: '200px' }}>Solicitante</th>}
+            <th style={{ width: '150px' }}>Categoría</th>
+            <th style={{ width: '110px' }}>Prioridad</th>
+            <th style={{ width: '160px' }}>Estado</th>
+            <th style={{ width: '150px' }}>Creada</th>
           </tr>
         </thead>
         <tbody>
-          {solicitudesFiltradas.length === 0 ? (
+          {solicitudes.length === 0 ? (
             <tr>
-              <td colSpan={8} className="text-center text-muted py-4">
-                {esOperador && filtroOperador === 'DISPONIBLES'
-                  ? 'No hay solicitudes disponibles pendientes de asignación.'
-                  : 'No hay solicitudes que coincidan con el filtro actual.'}
+              <td colSpan={puedeGestionar ? 7 : 6} className="text-center text-muted py-4">
+                No hay solicitudes registradas.
               </td>
             </tr>
           ) : (
-            solicitudesFiltradas.map((s) => (
+            solicitudes.map((s) => (
               <tr key={s.id}>
                 <td><strong>#{s.id}</strong></td>
                 <td>
                   <div><strong>{s.titulo}</strong></div>
                   <small className="text-muted">{s.descripcion}</small>
-                  {s.atencion && (
-                    <div className="mt-1 p-1 bg-light border rounded small text-success">
-                      <strong>💬 Atención:</strong> {s.atencion}
-                    </div>
-                  )}
                 </td>
-                <td>
-                  <span className="badge bg-light text-dark border py-1 px-2">
-                    👤 {s.cliente || 'Cliente'}
-                  </span>
-                </td>
-                <td>
-                  <span className="badge bg-light text-dark border">
-                    {s.categoria}
-                  </span>
-                </td>
-                
-                {/* Prioridad: Administrador puede modificarla en cualquier solicitud ya creada */}
-                <td>
-                  {esAdmin ? (
-                    <Form.Select
-                      size="sm"
-                      value={s.prioridad}
-                      onChange={(e) => cambiarPrioridad(s.id, e.target.value)}
-                      title="Administrador: puedes cambiar la prioridad de cualquier solicitud"
-                    >
-                      {prioridades.map((p) => (
-                        <option key={p} value={p}>{p}</option>
-                      ))}
-                    </Form.Select>
-                  ) : (
-                    <Badge bg={s.prioridad === 'Urgente' || s.prioridad === 'Crítica' ? 'danger' : s.prioridad === 'Alta' ? 'warning' : s.prioridad === 'Media' ? 'primary' : 'secondary'} text={s.prioridad === 'Alta' ? 'dark' : 'white'}>
-                      {s.prioridad}
-                    </Badge>
-                  )}
-                </td>
-
-                {/* Operador Asignado */}
-                <td>
-                  {s.operador ? (
-                    <span className="badge bg-light text-dark border p-2">
-                      👤 {s.operador}
-                    </span>
-                  ) : (
-                    <span className="badge bg-warning text-dark p-2">
-                      ⏳ Sin asignar
-                    </span>
-                  )}
-                </td>
-
-                {/* Estado: Operador y Admin pueden actualizarlo */}
+                {puedeGestionar && <td><small>{s.usuarioId}</small></td>}
+                <td><span className="badge bg-light text-dark border">{s.categoria}</span></td>
+                <td>{s.prioridad}</td>
                 <td>
                   {puedeGestionar ? (
                     <Form.Select
@@ -522,284 +245,15 @@ function Solicitudes({ usuarioActivo, prioridades = PRIORIDADES_BASE }) {
                       ))}
                     </Form.Select>
                   ) : (
-                    <Badge bg={s.estado === 'RESUELTA' ? 'success' : s.estado === 'EN_PROCESO' ? 'primary' : s.estado === 'ASIGNADA' ? 'info' : 'secondary'}>
-                      {s.estado}
-                    </Badge>
+                    <Badge bg={colorEstado(s.estado)}>{s.estado}</Badge>
                   )}
                 </td>
-
-                {/* Acciones según el Rol */}
-                <td>
-                  {/* Operador: auto-asignarse una disponible */}
-                  {esOperador && !s.operador && (
-                    <Button 
-                      variant="success" 
-                      size="sm" 
-                      className="w-100" 
-                      onClick={() => autoAsignarse(s.id)}
-                    >
-                      ✋ Auto-asignarme
-                    </Button>
-                  )}
-
-                  {/* Operador: registrar atención y resolver sus asignadas */}
-                  {esOperador && s.operador && s.operador.includes(usuarioActivo?.nombre || '') && (
-                    <Button 
-                      variant="outline-primary" 
-                      size="sm" 
-                      className="w-100" 
-                      onClick={() => abrirModalAtencion(s)}
-                    >
-                      📝 Atender
-                    </Button>
-                  )}
-
-                  {/* Administrador: bitácora */}
-                  {esAdmin && (
-                    <Button 
-                      variant="outline-secondary" 
-                      size="sm" 
-                      className="w-100"
-                      onClick={() => abrirModalAtencion(s)}
-                    >
-                      📝 Bitácora
-                    </Button>
-                  )}
-
-                  {!puedeGestionar && (
-                    <Badge bg="light" text="dark" className="border">
-                      {s.estado === 'RESUELTA' || s.estado === 'CERRADA' ? '✓ Finalizada' : '⏳ En seguimiento'}
-                    </Badge>
-                  )}
-                </td>
+                <td><small>{s.fechaCreacion ? new Date(s.fechaCreacion).toLocaleString('es-CL') : ''}</small></td>
               </tr>
             ))
           )}
         </tbody>
       </Table>
-
-      {/* Modal para que el Operador registre la Atención y Resuelva / Cierre / Cancele */}
-      <Modal show={!!solicitudParaAtencion} onHide={() => setSolicitudParaAtencion(null)} centered>
-        <Modal.Header closeButton>
-          <Modal.Title className="h6">
-            📝 Registrar Atención · Solicitud #{solicitudParaAtencion?.id}
-          </Modal.Title>
-        </Modal.Header>
-        <Modal.Body>
-          <p className="small mb-2"><strong>Título:</strong> {solicitudParaAtencion?.titulo}</p>
-          <p className="small text-muted mb-3"><strong>Requerimiento:</strong> {solicitudParaAtencion?.descripcion}</p>
-          
-          <Form.Group className="mb-3">
-            <Form.Label><strong>Detalle de la atención realizada:</strong></Form.Label>
-            <Form.Control
-              as="textarea"
-              rows={3}
-              placeholder="Describe las acciones tomadas para resolver la incidencia (ej: se reconfiguró el perfil de red, se sustituyó cable HDMI, etc.)"
-              value={textoAtencion}
-              onChange={(e) => setTextoAtencion(e.target.value)}
-            />
-          </Form.Group>
-        </Modal.Body>
-        <Modal.Footer className="d-flex justify-content-between flex-wrap gap-2">
-          <Button variant="secondary" size="sm" onClick={() => setSolicitudParaAtencion(null)}>
-            Cancelar
-          </Button>
-          <div className="d-flex gap-2">
-            <Button variant="outline-danger" size="sm" onClick={() => guardarAtencion('CANCELADA')}>
-              Cancelar Solicitud
-            </Button>
-            <Button variant="info" size="sm" onClick={() => guardarAtencion('EN_PROCESO')}>
-              Guardar (En Proceso)
-            </Button>
-            <Button variant="success" size="sm" onClick={() => guardarAtencion('RESUELTA')}>
-              ✓ Resolver
-            </Button>
-            <Button variant="dark" size="sm" onClick={() => guardarAtencion('CERRADA')}>
-              Cerrar
-            </Button>
-          </div>
-        </Modal.Footer>
-      </Modal>
-
-      {/* Sección inferior: Flujo y Monitor de Cola RabbitMQ (Solo visible para Administrador) */}
-      {esAdmin && (
-        <Card className="mt-4 shadow-sm border-0">
-          <Card.Body>
-            <div className="d-flex justify-content-between align-items-center mb-3">
-              <h5 className="mb-0">
-                <span className="me-2">🐇</span>
-                Flujo de Sincronización Asíncrona (RabbitMQ)
-              </h5>
-              <Button 
-                variant="outline-secondary" 
-                size="sm" 
-                onClick={cargarCategorias}
-              >
-                ↻ Verificar réplica local
-              </Button>
-            </div>
-
-            <Row className="g-3 text-center mb-3">
-              <Col md={4}>
-                <div className="p-3 border rounded bg-light h-100 text-start">
-                  <div className="d-flex justify-content-between align-items-center mb-2">
-                    <strong>1. Publicador</strong>
-                    <Badge bg="primary">ms-catalogo</Badge>
-                  </div>
-                  <small className="text-muted d-block">
-                    Registra en RDS Catálogo y emite el evento al Broker:
-                  </small>
-                  <div className="mt-2 small">
-                    <div><strong>Exchange:</strong> <code>catalogo.exchange</code></div>
-                    <div><strong>Routing Key:</strong> <code>categoria.creada</code></div>
-                  </div>
-                </div>
-              </Col>
-
-              <Col md={4}>
-                <div className="p-3 border rounded bg-light h-100 text-start">
-                  <div className="d-flex justify-content-between align-items-center mb-2">
-                    <strong>2. Message Broker</strong>
-                    <Badge bg="warning" text="dark">RabbitMQ 4.2</Badge>
-                  </div>
-                  <small className="text-muted d-block">
-                    Enruta y retiene mensajes de forma durable e independiente:
-                  </small>
-                  <div className="mt-2 small">
-                    <div><strong>Puerto AMQP:</strong> <code>5672</code></div>
-                    <div><strong>Cola Durable:</strong> <code>solicitudes.catalogo.queue</code></div>
-                  </div>
-                </div>
-              </Col>
-
-              <Col md={4}>
-                <div className="p-3 border rounded bg-light h-100 text-start">
-                  <div className="d-flex justify-content-between align-items-center mb-2">
-                    <strong>3. Consumidor</strong>
-                    <Badge bg="success">ms-solicitudes</Badge>
-                  </div>
-                  <small className="text-muted d-block">
-                    Consume el mensaje y actualiza su réplica local en BD:
-                  </small>
-                  <div className="mt-2 small">
-                    <div><strong>Listener:</strong> <code>@RabbitListener</code></div>
-                    <div><strong>Tabla Local:</strong> <code>categorias_locales</code></div>
-                  </div>
-                </div>
-              </Col>
-            </Row>
-
-            {/* Panel Monitor en Vivo del Estado de la Cola RabbitMQ */}
-            <div className="p-3 border rounded bg-white mb-3">
-              <div className="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
-                <h6 className="mb-0">
-                  📊 Monitor de Estado de la Cola: <code>solicitudes.catalogo.queue</code>
-                </h6>
-                <div className="d-flex gap-2">
-                  <Button 
-                    variant={consumidorActivo ? "outline-danger" : "outline-success"} 
-                    size="sm"
-                    onClick={toggleConsumidor}
-                  >
-                    {consumidorActivo ? "⏸️ Detener Consumidor (Prueba P2)" : "▶️ Iniciar Consumidor (Prueba P3)"}
-                  </Button>
-                </div>
-              </div>
-
-              {/* Tarjetas de Métricas de la Cola */}
-              <Row className="g-2 text-center my-2">
-                <Col md={3} xs={6}>
-                  <div className="p-2 border rounded bg-light">
-                    <small className="text-muted d-block">Mensajes Listos (Ready)</small>
-                    <span className={`h4 mb-0 fw-bold ${mensajesEnCola > 0 ? 'text-warning' : 'text-success'}`}>
-                      {mensajesEnCola}
-                    </span>
-                  </div>
-                </Col>
-                <Col md={3} xs={6}>
-                  <div className="p-2 border rounded bg-light">
-                    <small className="text-muted d-block">En Procesamiento (Unacked)</small>
-                    <span className="h4 mb-0 fw-bold text-secondary">{mensajesUnacked}</span>
-                  </div>
-                </Col>
-                <Col md={3} xs={6}>
-                  <div className="p-2 border rounded bg-light">
-                    <small className="text-muted d-block">Consumidores Activos</small>
-                    <span className={`h4 mb-0 fw-bold ${consumidorActivo ? 'text-success' : 'text-danger'}`}>
-                      {consumidorActivo ? '1 (ms-solicitudes)' : '0 (Detenido)'}
-                    </span>
-                  </div>
-                </Col>
-                <Col md={3} xs={6}>
-                  <div className="p-2 border rounded bg-light">
-                    <small className="text-muted d-block">Estado de la Cola</small>
-                    <span className="badge mt-2" style={{ backgroundColor: consumidorActivo ? '#198754' : '#ffc107', color: consumidorActivo ? '#fff' : '#000' }}>
-                      {consumidorActivo ? (mensajesEnCola > 0 ? 'Procesando' : 'En línea (Idle)') : 'Acumulando mensajes'}
-                    </span>
-                  </div>
-                </Col>
-              </Row>
-
-              {/* Formulario de Prueba de Flujo */}
-              <div className="mt-3 pt-2 border-top">
-                <small className="text-muted d-block mb-2">
-                  <strong>Publicar nueva categoría al broker para ver el comportamiento de la cola:</strong>
-                </small>
-                <Form onSubmit={ejecutarPruebaRabbitMQ}>
-                  <Row className="g-2 align-items-center">
-                    <Col md={4}>
-                      <Form.Control 
-                        size="sm"
-                        placeholder="Nombre de nueva categoría (ej: Impresoras)" 
-                        value={nombreCatTest}
-                        onChange={(e) => setNombreCatTest(e.target.value)}
-                        required
-                      />
-                    </Col>
-                    <Col md={5}>
-                      <Form.Control 
-                        size="sm"
-                        placeholder="Descripción (opcional)" 
-                        value={descCatTest}
-                        onChange={(e) => setDescCatTest(e.target.value)}
-                      />
-                    </Col>
-                    <Col md={3}>
-                      <Button 
-                        type="submit" 
-                        variant="primary" 
-                        size="sm" 
-                        className="w-100" 
-                        disabled={probandoFlujo}
-                      >
-                        {probandoFlujo ? 'Transmitiendo...' : 'Publicar en RabbitMQ'}
-                      </Button>
-                    </Col>
-                  </Row>
-                </Form>
-              </div>
-
-              {logFlujo && (
-                <Alert variant={logFlujo.tipo} className="mt-3 mb-0 py-2 small" dismissible onClose={() => setLogFlujo(null)}>
-                  {logFlujo.mensaje}
-                </Alert>
-              )}
-            </div>
-
-            <div className="bg-light p-2 rounded border small d-flex justify-content-between align-items-center">
-              <div>
-                <strong>Categorías sincronizadas en réplica local: </strong>
-                {categorias.map((c) => (
-                  <Badge key={c.id} bg="secondary" className="me-1">
-                    {c.nombre}
-                  </Badge>
-                ))}
-              </div>
-              <span className="text-muted small">Endpoint: <code>/v1/categorias-disponibles</code></span>
-            </div>
-          </Card.Body>
-        </Card>
-      )}
     </div>
   );
 }

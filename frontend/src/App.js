@@ -1,18 +1,14 @@
-import { useState } from 'react';
 import { AuthenticatedTemplate, UnauthenticatedTemplate, useMsal } from '@azure/msal-react';
-import { Container, Button, Badge } from 'react-bootstrap';
+import { Container, Button } from 'react-bootstrap';
 import { loginRequest } from './authConfig';
 import Solicitudes from './components/Solicitudes';
 import Categorias from './components/Categorias';
 import { useRoles } from './hooks/useRoles';
 import Login from './components/Login';
 
-const PRIORIDADES_INICIALES = ['Baja', 'Media', 'Alta', 'Urgente'];
-
 function App() {
   const { instance, accounts } = useMsal();
   const roles = useRoles();
-  const [prioridades, setPrioridades] = useState(PRIORIDADES_INICIALES);
 
   const estiloFondoAutenticado = {
     backgroundImage: `linear-gradient(rgba(214, 222, 234, 0.85), rgba(156, 169, 187, 0.85)), url('/fondo2.png')`,
@@ -37,6 +33,7 @@ function App() {
   };
 
   const esAdministrador = roles.includes('ROLE_ADMINISTRADOR');
+  const esOperador = roles.includes('ROLE_OPERADOR');
 
   return (
     <>
@@ -73,26 +70,16 @@ function App() {
             {/* Mantenimiento de Catálogo (Visible únicamente para Administrador) */}
             {esAdministrador && (
               <div className="mb-4">
-                <Categorias alActualizarPrioridades={setPrioridades} />
+                <Categorias />
                 <hr className="my-4" />
               </div>
             )}
 
-            <div className="d-flex align-items-center mb-2">
-              <h3 className="mb-0">
-                {esAdministrador ? 'Visión Global de Solicitudes' : 'Mis solicitudes'}
-              </h3>
-              {esAdministrador && (
-                <Badge bg="light" text="dark" className="border ms-2" style={{ fontWeight: 'normal', fontSize: '0.8rem' }}>
-                  RabbitMQ Broker
-                </Badge>
-              )}
-            </div>
+            <h3 className="mb-2">
+              {esAdministrador || esOperador ? 'Solicitudes de soporte' : 'Mis solicitudes'}
+            </h3>
 
-            <Solicitudes 
-              usuarioActivo={usuarioActivo} 
-              prioridades={prioridades}
-            />
+            <Solicitudes usuarioActivo={usuarioActivo} />
           </Container>
         </div>
       </AuthenticatedTemplate>
