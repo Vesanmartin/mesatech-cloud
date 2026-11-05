@@ -7,6 +7,7 @@ import cl.duoc.mesatechcloud.ms_solicitudes.model.Solicitud;
 import cl.duoc.mesatechcloud.ms_solicitudes.repository.CategoriaLocalRepository;
 import cl.duoc.mesatechcloud.ms_solicitudes.repository.SolicitudRepository;
 import org.springframework.stereotype.Service;
+import cl.duoc.mesatechcloud.ms_solicitudes.exception.SolicitudNoEncontradaException;
 import cl.duoc.mesatechcloud.ms_solicitudes.exception.TransicionEstadoInvalidaException;
 import java.util.List;
 
@@ -49,8 +50,9 @@ public class SolicitudService {
     }
 
     public Solicitud cambiarEstado(Long id, Estado nuevoEstado){
+    // Si el id no existe se lanza SolicitudNoEncontradaException -> ManejadorErrores responde 404 (antes era 500)
     Solicitud solicitud = solicitudRepository.findById(id)
-            .orElseThrow(() -> new RuntimeException("Solicitud no encontrada con id " + id));
+            .orElseThrow(() -> new SolicitudNoEncontradaException("Solicitud no encontrada con id " + id));
 
     if (nuevoEstado == Estado.RESUELTA && solicitud.getEstado() != Estado.EN_PROCESO) {
         throw new TransicionEstadoInvalidaException(

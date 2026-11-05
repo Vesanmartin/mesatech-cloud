@@ -20,6 +20,12 @@ public class ManejadorErrores {
         return ResponseEntity.badRequest().body(Map.of("error", "Datos invalidos", "campos", campos));
     }
 
+    // 404: se intento cambiar el estado de una solicitud que no existe
+    @ExceptionHandler(SolicitudNoEncontradaException.class)
+    public ResponseEntity<Map<String, Object>> solicitudNoEncontrada(SolicitudNoEncontradaException e) {
+        return ResponseEntity.status(404).body(Map.of("error", e.getMessage()));
+    }
+
     // 422: la categoria aun no llego por RabbitMQ (procesamiento asincrono)
     @ExceptionHandler(CategoriaNoDisponibleException.class)
     public ResponseEntity<Map<String, Object>> categoriaNoDisponible(CategoriaNoDisponibleException e) {
